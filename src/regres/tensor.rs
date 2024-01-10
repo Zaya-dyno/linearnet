@@ -69,7 +69,7 @@ impl Tensor {
     {
         let shape: Shape = shape.into();
         let mut rng = thread_rng();
-        let side = Uniform::new(-3.0,3.0);
+        let side = Uniform::new(-1.0,1.0);
         let bias = (0..shape.second).map(|_| rng.sample(side)).collect();
         let weights = (0..(shape.second*shape.first)).map(|_| rng.sample(side)).collect();
         Tensor {
@@ -104,6 +104,22 @@ impl Tensor {
     #[inline(always)]
     pub fn flat_tensor(&self) -> bool {
         self.shape.first == 0
+    }
+
+    pub fn softmax(mut self) -> Result<Tensor, TensorError> {
+        if !self.flat_tensor() {
+            eprintln!("Current tensor has {} shape",
+                      self.shape);
+            return Err( TensorError {
+                message: "cannot softmax non-flat tensor".to_string(),
+                line: 0,
+                column: 0,
+            });
+        }
+        let mut exps: Vec<f64>= (0..self.shape.second).map(|i| self.bias[i as usize].exp()).collect();
+        let sum: f64 = exps.iter().sum();
+        Ok(Tensor::new_flat(self.shape.second,
+                            exps.iter().map(|i| i/sum).collect()))
     }
 
     pub fn relu(mut self) -> Result<Tensor,TensorError> {

@@ -4,38 +4,70 @@ use rand::rngs::ThreadRng;
 use std::fmt;
 use thiserror::Error;
 use std::iter::{repeat,zip};
+use Degree::{SCA,VEC,MAT};
+use std::ops::Range;
 
 pub type Tens = f64;
+pub type ituple = (i32,i32);
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum Degree {
+    SCA,
+    VEC,
+    MAT,
+}
 
 #[derive(Debug, Copy, Clone)]
 pub struct Shape {
-    first: i32,
-    second: i32,
+    degree: Degree,
+    dim: (i32,i32),
+    pub T: bool,
 }
 
-
 impl Shape {
-    pub fn new(first: i32, second: i32) -> Shape {
+    pub fn new(degree: Degree, dim: (i32,i32)) -> Shape {
         Shape {
-            first,
-            second,
+            degree,
+            dim,
+            T:false,
         }
     }
+    pub fn scalar() -> Shape {
+        Shape {
+            degree:SCA,
+            dim:(0,0),
+            T:false,
+        }
+    }
+    pub fn size(&self) -> usize {
+        match self.degree {
+            SCA => 1 as usize,
+            VEC => self.dim.0 as usize,
+            MAT => (self.dim.0 * self.dim.1) as usize,
+        }
+    }
+
 }
 
 impl Into<Shape> for (i32,i32) {
     fn into(self) -> Shape {
-        Shape {
-            first: self.0,
-            second: self.1,
-        }
+        Shape::new(MAT,self)
+    }
+}
+
+impl Into<Shape> for i32 {
+    fn into(self) -> Shape {
+        Shape::new(VEC,(self,0))
     }
 }
 
 impl fmt::Display for Shape {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result
     {
-        write!(f,"({},{})",self.first,self.second)
+        match self.degree {
+            SCA => write!(f,"()"),
+            VEC => write!(f,"({})",self.dim.0),
+            MAT => write!(f,"{:?}",self.dim),
+        }
     }
 }
 
@@ -50,46 +82,69 @@ pub struct TensorError {
 #[derive(Debug)]
 pub struct Tensor{
     pub shape: Shape,
-    // size shape.second
-    bias: Vec<Tens>, 
-    // size shape.first * shape.second
-    // w01, w02 .. w(shape.second)(shape.first)
-    weights: Vec<Tens>, 
+    val: Vec<Tens>, 
 }
 
 impl Tensor {
     // Not for production
-    pub fn empty() -> Tensor {
-        Self::new_flat(1,vec![1.0])
+    pub fn empty(degree: Degree) -> Tensor {
+        match degree {
+            SCA => Self::new_empty(Shape::scalar()),
+            VEC => Self::new_empty(0.into()),
+            MAT => Self::new_empty((0,0).into()),
+        }
     }
 
+    pub fn new_empty(shape: Shape) -> Tensor {
+        Tensor {
+            shape,
+            val: vec![],
+        }
+    }
+
+    pub fn new<A>(shape: A, val: Vec<Tens>) -> Tensor
+        where A: Into<Shape>
+    {
+        let shape = shape.into();
+        Tensor {
+            shape,
+            val,
+        }
+    }
 
     pub fn random_uniform<A>(shape:A) -> Tensor 
         where A: Into<Shape>
     {
         let shape: Shape = shape.into();
+        let size = shape.size();
+
         let mut rng = thread_rng();
         let side = Uniform::new(-1.0,1.0);
-        let bias = (0..shape.second).map(|_| rng.sample(side)).collect();
-        let weights = (0..(shape.second*shape.first)).map(|_| rng.sample(side)).collect();
+        let val = (0..(shape.size())).map(|_| rng.sample(side)).collect();
         Tensor {
             shape,
-            bias,
-            weights,
+            val,
         }
     }
 
-    pub fn new_flat(size: i32, val:Vec<Tens>)->Tensor{
-        Tensor {
-            shape:Shape::new(0,size),
-            bias:val,
-            weights:vec![],
-        }
-    }
-    
     #[inline(always)]
-    fn can_multi_shape(lhs: Shape, rhs: Shape) -> bool {
-        lhs.second == rhs.first
+    fn can_dot_shape(lhs: Shape,mut rhs: Shape) -> bool {
+        if lhs.T != rhs.T  {
+            let t = rhs.dim.1;
+            rhs.dim.1 = rhs.dim.0;
+            rhs.dim.0 = t;
+        }
+        
+        match (lhs.degree, rhs.degree) {
+            (SCA, _ ) => true,
+            ( _ ,SCA) => true,
+            (VEC,VEC) => true,
+            (VEC,MAT) => (lhs.dim.0 == rhs.dim.0) |
+                     (lhs.dim.0 == rhs.dim.1),
+            (MAT,VEC) => (rhs.dim.0 == lhs.dim.0) |
+                     (rhs.dim.0 == lhs.dim.1),
+            (MAT,MAT) => (rhs.dim.1 == lhs.dim.0),
+        }
     }
 
     fn accum_sum(lhs:&[f64],rhs:&[f64],size: usize) -> Tens
@@ -102,62 +157,153 @@ impl Tensor {
     }
 
     #[inline(always)]
-    pub fn flat_tensor(&self) -> bool {
-        self.shape.first == 0
+    pub fn vector(&self) -> bool {
+        self.shape.degree == VEC
+    }
+    #[inline(always)]
+    pub fn scalar(&self) -> bool {
+        self.shape.degree == SCA 
+    }
+    #[inline(always)]
+    pub fn matrix(&self) -> bool {
+        self.shape.degree == MAT 
     }
 
-    pub fn softmax(mut self) -> Result<Tensor, TensorError> {
-        if !self.flat_tensor() {
+    pub fn softmax(&self) -> Result<Tensor, TensorError> {
+        if self.scalar() {
             eprintln!("Current tensor has {} shape",
                       self.shape);
             return Err( TensorError {
-                message: "cannot softmax non-flat tensor".to_string(),
-                line: 0,
-                column: 0,
+                message: "cannot softmax on scalar".to_string(),
+                line: line!() as usize,
+                column: column!() as usize,
             });
         }
-        let mut exps: Vec<f64>= (0..self.shape.second).map(|i| self.bias[i as usize].exp()).collect();
-        let sum: f64 = exps.iter().sum();
-        Ok(Tensor::new_flat(self.shape.second,
-                            exps.iter().map(|i| i/sum).collect()))
+        let mut exps: Vec<f64>= self.val.iter().map(|a| a.exp()).collect();
+        let chunks = match self.vector() {
+            true => self.shape.dim.0,
+            false => self.shape.dim.1,
+        };
+        let sums:Vec<f64> = exps.chunks(chunks as usize).map(|a| a.iter().sum()).collect();
+        for i in 0..exps.len() {
+            exps[i] = exps[i] / sums[(i as i32/chunks) as usize]
+        }
+        Ok(Tensor::new(self.shape,
+                       exps))
     }
 
-    pub fn relu(mut self) -> Result<Tensor,TensorError> {
-        if !self.flat_tensor() {
+    pub fn relu(&self) -> Result<Tensor,TensorError> {
+        if self.scalar() {
             eprintln!("Current tensor has {} shape",
                       self.shape);
             return Err( TensorError {
-                message: "cannot relu non-flat tensor".to_string(),
-                line: 0,
-                column: 0,
+                message: "cannot relu on scalar".to_string(),
+                line: line!() as usize,
+                column: column!() as usize,
             });
         }
-        for i in 0..self.shape.second {
-            if self.bias[i as usize] < 0.0 {
-                self.bias[i as usize] = 0.0;
+        let mut ret = Vec::with_capacity(self.shape.size());
+        for i in &self.val {
+            if *i < 0.0 {
+                ret.push( 0.0 );
+            } else {
+                ret.push(  *i  );
             }
         }
-        Ok(self)
+        Ok(Tensor::new(self.shape,
+                       ret))
     }
 
-    pub fn multi(&self, rhs: &Tensor) -> Result<Tensor,TensorError> {
-        if !Self::can_multi_shape(self.shape,rhs.shape) {
+    pub fn dot(&self, rhs: &Tensor) -> Result<Tensor,TensorError> {
+        if !Self::can_dot_shape(self.shape,rhs.shape) {
             eprintln!("Tried to multiply {} shape with {} shape",
                       self.shape, rhs.shape);
             return Err( TensorError {
                 message: "wrong size tensors".to_string(),
-                line: 0,
-                column: 0,
+                line: line!() as usize,
+                column: column!() as usize,
             });
         }
-        let mut ret = vec![0.0;rhs.shape.second as usize];
-        let mut binding = rhs.weights.chunks(rhs.shape.first as usize);
-        let weights = binding.by_ref();
-        let bias = rhs.bias.iter().by_ref();
-        for (i,(x,y)) in zip(weights,
-                             repeat(&self.bias)).enumerate() {
-            ret[i] = Self::accum_sum(x,y,rhs.shape.first as usize);
+        match (self.shape.degree, rhs.shape.degree) {
+           (SCA, _ ) => Ok(Tensor::new_empty(0.into())),//dot_scalar_matrix(self.val[0],rhs),
+           ( _ ,SCA) => Ok(Tensor::new_empty(0.into())),//dot_scalar_matrix(rhs.val[0],&self),
+           (VEC,VEC) => Ok(Tensor::new_empty(0.into())),//dot_vector_vector(&self,rhs),
+           (VEC,MAT) => Self::dot_vector_matrix(&self,rhs), 
+           (MAT,VEC) => Ok(Tensor::new_empty(0.into())),//dot_vector_matrix(rhs,&self),
+           (MAT,MAT) => Self::dot_matrix_matrix(&self,rhs),
+        }           
+    }      
+
+
+    pub fn dot_matrix_matrix(lhs : &Tensor, rhs: &Tensor) -> Result<Tensor, TensorError>
+    {
+        let mut ret = Vec::with_capacity((rhs.shape.dim.1 *
+                                          lhs.shape.dim.1).try_into().unwrap() );
+        for i in 0..lhs.shape.dim.1 {
+            for j in 0..rhs.shape.dim.1 {
+                let l_start = (i*lhs.shape.dim.0) as usize;
+                let l_end = l_start + lhs.shape.dim.0 as usize;
+                let r_start = (j*lhs.shape.dim.0) as usize;
+                let r_end = r_start + rhs.shape.dim.0 as usize;
+                let l_range:Range<usize> = l_start..l_end;
+                let r_range:Range<usize> = r_start..r_end;
+                ret.push(Self::accum_sum(&lhs.val[l_range],
+                                         &rhs.val[r_range],
+                                         rhs.shape.dim.0 as usize));
+            }
         }
-        Ok(Tensor::new_flat(rhs.shape.second,ret))
+        let mut shape:Shape = (rhs.shape.dim.1,lhs.shape.dim.1).into();
+        shape.T = true;
+        Ok( Tensor::new(shape,
+                        ret))
     }
+
+        
+    pub fn dot_vector_matrix(lhs : &Tensor, rhs: &Tensor) -> Result<Tensor, TensorError>
+    {
+        let mut ret = Vec::with_capacity(rhs.shape.dim.1 as usize );
+        for j in 0..rhs.shape.dim.1 {
+            let r_start = (j*lhs.shape.dim.0) as usize;
+            let r_end = r_start + rhs.shape.dim.0 as usize;
+            let r_range:Range<usize> = r_start..r_end;
+            ret.push(Self::accum_sum(&lhs.val,
+                                     &rhs.val[r_range],
+                                     rhs.shape.dim.0 as usize));
+        }
+        Ok( Tensor::new::<i32>( rhs.shape.dim.1.into(),
+                                ret))
+    }
+
+    // return single element vector when self is vector.
+    //pub fn cross_entropy_loss(&self, labels: &[i32]) -> Vec<f64> {
+    //irintln!("{:#?}",loss);
+    //    if self.scalar() {
+    //        eprintln!("Current tensor has {} shape",
+    //                  self.shape);
+    //        return Err( TensorError {
+    //            message: "cannot entropy loss non-flat tensor".to_string(),
+    //            line: line!() as usize,
+    //            column: column!() as usize,
+    //        });
+    //    }
+    //    if self.shape.dim.0 != labels.len() {
+    //        eprintln!("Current tensor has {} shape",
+    //                  self.shape);
+    //        return Err( TensorError {
+    //            message: "cannot entropy loss wrong length label".to_string(),
+    //            line: line!() as usize,
+    //            column: column!() as usize,
+    //        });
+    //    }
+    //    // check non of the labels are higher than number of class 
+    //    if self.shape.dim.0 < labels.iter().max() {
+    //        eprintln!("Labels has {} value, when max is",
+    //                  labels.iter().max(),self.shape.dim.0);
+    //        return Err( TensorError {
+    //            message: "wrong label".to_string(),
+    //            line: line!() as usize;
+    //            column: column!() as usize;
+    //        })
+    //    }
+    //}
 }

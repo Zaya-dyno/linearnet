@@ -29,16 +29,16 @@ impl LinearNet {
     }
 
     pub fn call(&self, x: &Tensor) -> Result<Tensor> {
-        if !x.flat_tensor() {
+        if x.scalar() {
             eprintln!("x tensor has {} shape",
                       x.shape);
             return Err( Box::new(LNError {
-                message: "cannot call LinearNet on non-flat tensor".to_string(),
-                line: 0,
-                column: 0,
+                message: "cannot call LinearNet on scalar".to_string(),
+                line: line!() as usize,
+                column: column!() as usize,
             }));
         }
-        Ok(x.multi(&self.l1)?.relu()?.multi(&self.l2)?.softmax()?)
+        Ok(x.dot(&self.l1)?.relu()?.dot(&self.l2)?.softmax()?)
     }
 }
 

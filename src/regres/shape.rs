@@ -14,22 +14,22 @@ pub enum Degree {
 pub struct Shape {
     pub degree: Degree,
     pub dim: ituple,
-    pub T: bool,
+    pub t: bool,
 }
 
 impl Shape {
-    pub fn new(degree: Degree, dim: ituple, T: bool) -> Shape {
+    pub fn new(degree: Degree, dim: ituple, t: bool) -> Shape {
         Shape {
             degree,
             dim,
-            T,
+            t,
         }
     }
     pub fn scalar() -> Shape {
         Shape {
             degree:SCA,
             dim:(0,0),
-            T:false,
+            t:false,
         }
     }
     pub fn size(&self) -> usize {
@@ -67,7 +67,7 @@ impl fmt::Display for Shape {
             SCA => write!(f,"()"),
             VEC => write!(f,"({})",self.dim.0),
             MAT => {
-                if self.T {
+                if self.t {
                     return write!(f,"{:?}.T",self.dim);
                 } else {
                     return write!(f,"{:?}",self.dim);

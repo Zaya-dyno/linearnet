@@ -7,7 +7,7 @@ use thiserror::Error;
 use std::iter::repeat;
 
 fn main() {
-    let ln = LinearNet::new(((5,10),(10,3)));
-    let x = Tensor::new((2,5),vec![1.0;10]);
-    println!("{:#?}",ln.call(&x));
+    let ln = LinearNet::new(((3,5),(5,4)));
+    let x = Tensor::random_uniform((6,3));
+    println!("{:#?}",ln.call(&x).unwrap());
 }

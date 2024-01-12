@@ -79,7 +79,7 @@ impl Tensor {
     }
 
     fn row(&self, i: i32) ->  Box<dyn Iterator<Item = &Tens> + '_> {
-        if (self.shape.T) {
+        if (self.shape.t) {
             self.vertical(i)
         } else {
             self.horizontal(i)
@@ -87,7 +87,7 @@ impl Tensor {
     }
 
     fn column(&self, i: i32) ->  Box<dyn Iterator<Item = &Tens> + '_> {
-        if (self.shape.T) {
+        if (self.shape.t) {
             self.horizontal(i)
         } else {
             self.vertical(i)
@@ -175,6 +175,40 @@ impl Tensor {
                        ret))
     }
 
+    fn add_list(lhs:&Vec<f64>,rhs:&Vec<f64>) -> Vec<f64> {
+        let mut ret = Vec::with_capacity(lhs.len());
+        for (l,r) in zip(lhs,rhs) {
+            ret.push(l+r);
+        }
+        ret
+    }
+
+    pub fn add(&self, rhs: &Tensor) -> Result<Tensor, TensorError> {
+        if !rhs.vector() {
+            eprintln!("Cannot add non vector to tensor {:?}",
+                      rhs.shape.degree);
+            return Err( TensorError {
+                message: "wrong degree tensor".to_string(),
+                line: line!() as usize,
+                column: column!() as usize,
+            });
+        }
+        if self.shape.dim.1 != rhs.shape.dim.0 {
+            eprintln!("Tried to add {} shape to {} shape",
+                      rhs.shape, self.shape);
+            return Err( TensorError {
+                message: "wrong size tensors".to_string(),
+                line: line!() as usize,
+                column: column!() as usize,
+            });
+        }
+        let mut ret = Vec::with_capacity(self.shape.size());
+        for i in 0..self.shape.dim.0 {
+            ret.append(&mut Self::add_list(&self.row(i).map(|a| *a).collect::<Vec<f64>>(),&rhs.val));
+        }
+        Ok(Tensor::new(self.shape,
+                       ret))
+    }
     pub fn dot(&self, rhs: &Tensor) -> Result<Tensor,TensorError> {
         if !Self::can_dot_shape(self.shape,rhs.shape) {
             eprintln!("Tried to multiply {} shape with {} shape",
@@ -186,11 +220,11 @@ impl Tensor {
             });
         }
         match (self.shape.degree, rhs.shape.degree) {
-           (SCA, _ ) => Ok(Tensor::new_empty::<i32>(0.into())),//dot_scalar_matrix(self.val[0],rhs),
-           ( _ ,SCA) => Ok(Tensor::new_empty::<i32>(0.into())),//dot_scalar_matrix(rhs.val[0],&self),
-           (VEC,VEC) => Ok(Tensor::new_empty::<i32>(0.into())),//dot_vector_vector(&self,rhs),
-           (VEC,MAT) => Self::dot_vector_matrix(&self,rhs), 
-           (MAT,VEC) => Ok(Tensor::new_empty::<i32>(0.into())),//dot_vector_matrix(rhs,&self),
+           (SCA, _ ) => Ok(Tensor::new_empty::<i32>(0.into())),
+           ( _ ,SCA) => Ok(Tensor::new_empty::<i32>(0.into())),
+           (VEC,VEC) => Ok(Tensor::new_empty::<i32>(0.into())),
+           (VEC,MAT) => Ok(Tensor::new_empty::<i32>(0.into())), 
+           (MAT,VEC) => Ok(Tensor::new_empty::<i32>(0.into())),
            (MAT,MAT) => Self::dot_matrix_matrix(&self,rhs),
         }           
     }      
@@ -202,8 +236,6 @@ impl Tensor {
         let mut ret = Vec::with_capacity(ret_shape.size());
         for i in 0..lhs.shape.dim.0 {
             for j in 0..rhs.shape.dim.1 {
-                println!("{:#?}",lhs.row(i).map(|a| *a).collect::<Vec<f64>>());
-                println!("{:#?}",rhs.column(j).map(|a| *a).collect::<Vec<f64>>());
                 ret.push(Self::accum_sum(lhs.row(i),
                                          rhs.column(j)));
             }
@@ -213,21 +245,6 @@ impl Tensor {
     }
 
         
-    pub fn dot_vector_matrix(lhs : &Tensor, rhs: &Tensor) -> Result<Tensor, TensorError>
-    {
-        //let mut ret = Vec::with_capacity(rhs.shape.dim.1 as usize );
-        //for j in 0..rhs.shape.dim.1 {
-        //    let r_start = (j*lhs.shape.dim.0) as usize;
-        //    let r_end = r_start + rhs.shape.dim.0 as usize;
-        //    let r_range:Range<usize> = r_start..r_end;
-        //    ret.push(Self::accum_sum(&lhs.val,
-        //                             &rhs.val[r_range],
-        //                             rhs.shape.dim.0 as usize));
-        //}
-        //Ok( Tensor::new::<i32>( rhs.shape.dim.1.into(),
-        //                        ret))
-        Ok( Tensor::empty(MAT) )
-    }
 
     // return single element vector when self is vector.
     //pub fn cross_entropy_loss(&self, labels: &[i32]) -> Vec<f64> {

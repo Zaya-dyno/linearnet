@@ -1,11 +1,11 @@
 use rand::distributions::Uniform;
 use rand::{thread_rng,Rng};
-use rand::rngs::ThreadRng;
-use std::fmt;
+
+
 use thiserror::Error;
-use std::iter::{repeat,zip};
-use std::ops::Range;
-use super::shape::{ituple,Shape,Degree};
+use std::iter::{zip};
+
+use super::shape::{Ituple,Shape,Degree};
 use super::shape::Degree::{SCA,VEC,MAT};
 pub type Tens = f64;
 
@@ -29,7 +29,7 @@ impl Tensor {
         match degree {
             SCA => Self::new_empty(Shape::scalar()),
             VEC => Self::new_empty::<i32>(0.into()),
-            MAT => Self::new_empty::<ituple>((0,0).into()),
+            MAT => Self::new_empty::<Ituple>((0,0).into()),
         }
     }
 
@@ -57,7 +57,7 @@ impl Tensor {
         where A: Into<Shape>
     {
         let shape: Shape = shape.into();
-        let size = shape.size();
+        let _size = shape.size();
 
         let mut rng = thread_rng();
         let side = Uniform::new(-1.0,1.0);
@@ -79,7 +79,7 @@ impl Tensor {
     }
 
     fn row(&self, i: i32) ->  Box<dyn Iterator<Item = &Tens> + '_> {
-        if (self.shape.t) {
+        if self.shape.t {
             self.vertical(i)
         } else {
             self.horizontal(i)
@@ -87,14 +87,14 @@ impl Tensor {
     }
 
     fn column(&self, i: i32) ->  Box<dyn Iterator<Item = &Tens> + '_> {
-        if (self.shape.t) {
+        if self.shape.t {
             self.horizontal(i)
         } else {
             self.vertical(i)
         }
     }
 
-    fn can_dot_shape(lhs: Shape,mut rhs: Shape) -> bool {
+    fn can_dot_shape(lhs: Shape,rhs: Shape) -> bool {
         match (lhs.degree, rhs.degree) {
             (SCA, _ ) => true,
             ( _ ,SCA) => true,
@@ -103,7 +103,7 @@ impl Tensor {
                          (lhs.dim.0 == rhs.dim.1),
             (MAT,VEC) => (rhs.dim.0 == lhs.dim.0) |
                          (rhs.dim.0 == lhs.dim.1),
-            (MAT,MAT) => (lhs.dim.1 == rhs.dim.0),
+            (MAT,MAT) => lhs.dim.1 == rhs.dim.0,
         }
     }
 

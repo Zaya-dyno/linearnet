@@ -1,8 +1,8 @@
 use std::fmt;
 use Degree::{SCA,VEC,MAT};
 
-pub type matsh = (i32,i32,bool);
-pub type ituple = (i32,i32);
+pub type Ituple = (i32,i32);
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Degree {
     SCA,
@@ -13,12 +13,12 @@ pub enum Degree {
 #[derive(Debug, Copy, Clone)]
 pub struct Shape {
     pub degree: Degree,
-    pub dim: ituple,
+    pub dim: Ituple,
     pub t: bool,
 }
 
 impl Shape {
-    pub fn new(degree: Degree, dim: ituple, t: bool) -> Shape {
+    pub fn new(degree: Degree, dim: Ituple, t: bool) -> Shape {
         Shape {
             degree,
             dim,

@@ -52,7 +52,6 @@ impl LinearNet {
                 column: column!() as usize,
             }));
         }
-        println!("{:#?}",x.dot(&self.l1)?.relu()?.dot(&self.l2).unwrap());
         Ok(x.dot(&self.l1)?.relu()?.dot(&self.l2)?.softmax()?)
     }
 }

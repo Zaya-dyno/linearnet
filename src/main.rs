@@ -7,9 +7,7 @@ use thiserror::Error;
 use std::iter::repeat;
 
 fn main() {
-    let mut x = Tensor::new::<matsh>((2,2,false),vec![1.0,3.0,
-                                                      7.0,11.0]);
-    let mut y = Tensor::new::<matsh>((2,2,false),vec![2.0,5.0,
-                                                      13.0,17.0]);
-    println!("{:#?}",x.dot(&y));
+    let ln = LinearNet::new(((5,10),(10,3)));
+    let x = Tensor::new((2,5),vec![1.0;10]);
+    println!("{:#?}",ln.call(&x));
 }

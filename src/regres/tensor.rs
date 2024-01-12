@@ -103,7 +103,7 @@ impl Tensor {
                          (lhs.dim.0 == rhs.dim.1),
             (MAT,VEC) => (rhs.dim.0 == lhs.dim.0) |
                          (rhs.dim.0 == lhs.dim.1),
-            (MAT,MAT) => (rhs.dim.1 == lhs.dim.0),
+            (MAT,MAT) => (lhs.dim.1 == rhs.dim.0),
         }
     }
 

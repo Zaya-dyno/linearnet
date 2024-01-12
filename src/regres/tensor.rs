@@ -4,72 +4,10 @@ use rand::rngs::ThreadRng;
 use std::fmt;
 use thiserror::Error;
 use std::iter::{repeat,zip};
-use Degree::{SCA,VEC,MAT};
 use std::ops::Range;
-
+use super::shape::{ituple,Shape,Degree};
+use super::shape::Degree::{SCA,VEC,MAT};
 pub type Tens = f64;
-pub type ituple = (i32,i32);
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum Degree {
-    SCA,
-    VEC,
-    MAT,
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct Shape {
-    degree: Degree,
-    dim: (i32,i32),
-    pub T: bool,
-}
-
-impl Shape {
-    pub fn new(degree: Degree, dim: (i32,i32)) -> Shape {
-        Shape {
-            degree,
-            dim,
-            T:false,
-        }
-    }
-    pub fn scalar() -> Shape {
-        Shape {
-            degree:SCA,
-            dim:(0,0),
-            T:false,
-        }
-    }
-    pub fn size(&self) -> usize {
-        match self.degree {
-            SCA => 1 as usize,
-            VEC => self.dim.0 as usize,
-            MAT => (self.dim.0 * self.dim.1) as usize,
-        }
-    }
-
-}
-
-impl Into<Shape> for (i32,i32) {
-    fn into(self) -> Shape {
-        Shape::new(MAT,self)
-    }
-}
-
-impl Into<Shape> for i32 {
-    fn into(self) -> Shape {
-        Shape::new(VEC,(self,0))
-    }
-}
-
-impl fmt::Display for Shape {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result
-    {
-        match self.degree {
-            SCA => write!(f,"()"),
-            VEC => write!(f,"({})",self.dim.0),
-            MAT => write!(f,"{:?}",self.dim),
-        }
-    }
-}
 
 #[derive(Error,Debug)]
 #[error("{message:} ({line:}, {column})")]
@@ -90,12 +28,15 @@ impl Tensor {
     pub fn empty(degree: Degree) -> Tensor {
         match degree {
             SCA => Self::new_empty(Shape::scalar()),
-            VEC => Self::new_empty(0.into()),
-            MAT => Self::new_empty((0,0).into()),
+            VEC => Self::new_empty::<i32>(0.into()),
+            MAT => Self::new_empty::<ituple>((0,0).into()),
         }
     }
 
-    pub fn new_empty(shape: Shape) -> Tensor {
+    pub fn new_empty<A>(shape: A) -> Tensor
+        where A: Into<Shape>
+    {
+        let shape = shape.into();
         Tensor {
             shape,
             val: vec![],
@@ -127,31 +68,51 @@ impl Tensor {
         }
     }
 
-    #[inline(always)]
-    fn can_dot_shape(lhs: Shape,mut rhs: Shape) -> bool {
-        if lhs.T != rhs.T  {
-            let t = rhs.dim.1;
-            rhs.dim.1 = rhs.dim.0;
-            rhs.dim.0 = t;
+    fn horizontal(&self, i: i32) ->  Box<dyn Iterator<Item = &Tens> + '_>
+    {
+        Box::new(self.val.iter().skip((self.shape.dim.1*i) as usize))
+    }
+
+    fn vertical(&self, i: i32) -> Box<dyn Iterator<Item = &Tens> + '_>
+    {
+        Box::new(self.val.iter().skip(i as usize).step_by(self.shape.dim.1 as usize))
+    }
+
+    fn row(&self, i: i32) ->  Box<dyn Iterator<Item = &Tens> + '_> {
+        if (self.shape.T) {
+            self.vertical(i)
+        } else {
+            self.horizontal(i)
         }
-        
+    }
+
+    fn column(&self, i: i32) ->  Box<dyn Iterator<Item = &Tens> + '_> {
+        if (self.shape.T) {
+            self.horizontal(i)
+        } else {
+            self.vertical(i)
+        }
+    }
+
+    fn can_dot_shape(lhs: Shape,mut rhs: Shape) -> bool {
         match (lhs.degree, rhs.degree) {
             (SCA, _ ) => true,
             ( _ ,SCA) => true,
-            (VEC,VEC) => true,
+            (VEC,VEC) => lhs.dim.0 == rhs.dim.0,
             (VEC,MAT) => (lhs.dim.0 == rhs.dim.0) |
-                     (lhs.dim.0 == rhs.dim.1),
+                         (lhs.dim.0 == rhs.dim.1),
             (MAT,VEC) => (rhs.dim.0 == lhs.dim.0) |
-                     (rhs.dim.0 == lhs.dim.1),
+                         (rhs.dim.0 == lhs.dim.1),
             (MAT,MAT) => (rhs.dim.1 == lhs.dim.0),
         }
     }
 
-    fn accum_sum(lhs:&[f64],rhs:&[f64],size: usize) -> Tens
+    fn accum_sum<'a, A>(lhs:A,rhs:A) -> Tens
+        where A: Iterator<Item = &'a Tens>
     {
         let mut sum = 0.0;
-        for i in 0..size {
-            sum += lhs[i] * rhs[i];
+        for (l,r) in zip(lhs,rhs) {
+            sum += *l * *r;
         }
         sum
     }
@@ -225,11 +186,11 @@ impl Tensor {
             });
         }
         match (self.shape.degree, rhs.shape.degree) {
-           (SCA, _ ) => Ok(Tensor::new_empty(0.into())),//dot_scalar_matrix(self.val[0],rhs),
-           ( _ ,SCA) => Ok(Tensor::new_empty(0.into())),//dot_scalar_matrix(rhs.val[0],&self),
-           (VEC,VEC) => Ok(Tensor::new_empty(0.into())),//dot_vector_vector(&self,rhs),
+           (SCA, _ ) => Ok(Tensor::new_empty::<i32>(0.into())),//dot_scalar_matrix(self.val[0],rhs),
+           ( _ ,SCA) => Ok(Tensor::new_empty::<i32>(0.into())),//dot_scalar_matrix(rhs.val[0],&self),
+           (VEC,VEC) => Ok(Tensor::new_empty::<i32>(0.into())),//dot_vector_vector(&self,rhs),
            (VEC,MAT) => Self::dot_vector_matrix(&self,rhs), 
-           (MAT,VEC) => Ok(Tensor::new_empty(0.into())),//dot_vector_matrix(rhs,&self),
+           (MAT,VEC) => Ok(Tensor::new_empty::<i32>(0.into())),//dot_vector_matrix(rhs,&self),
            (MAT,MAT) => Self::dot_matrix_matrix(&self,rhs),
         }           
     }      
@@ -237,41 +198,35 @@ impl Tensor {
 
     pub fn dot_matrix_matrix(lhs : &Tensor, rhs: &Tensor) -> Result<Tensor, TensorError>
     {
-        let mut ret = Vec::with_capacity((rhs.shape.dim.1 *
-                                          lhs.shape.dim.1).try_into().unwrap() );
-        for i in 0..lhs.shape.dim.1 {
+        let ret_shape: Shape = (lhs.shape.dim.0,rhs.shape.dim.1).into();
+        let mut ret = Vec::with_capacity(ret_shape.size());
+        for i in 0..lhs.shape.dim.0 {
             for j in 0..rhs.shape.dim.1 {
-                let l_start = (i*lhs.shape.dim.0) as usize;
-                let l_end = l_start + lhs.shape.dim.0 as usize;
-                let r_start = (j*lhs.shape.dim.0) as usize;
-                let r_end = r_start + rhs.shape.dim.0 as usize;
-                let l_range:Range<usize> = l_start..l_end;
-                let r_range:Range<usize> = r_start..r_end;
-                ret.push(Self::accum_sum(&lhs.val[l_range],
-                                         &rhs.val[r_range],
-                                         rhs.shape.dim.0 as usize));
+                println!("{:#?}",lhs.row(i).map(|a| *a).collect::<Vec<f64>>());
+                println!("{:#?}",rhs.column(j).map(|a| *a).collect::<Vec<f64>>());
+                ret.push(Self::accum_sum(lhs.row(i),
+                                         rhs.column(j)));
             }
         }
-        let mut shape:Shape = (rhs.shape.dim.1,lhs.shape.dim.1).into();
-        shape.T = true;
-        Ok( Tensor::new(shape,
+        Ok( Tensor::new(ret_shape,
                         ret))
     }
 
         
     pub fn dot_vector_matrix(lhs : &Tensor, rhs: &Tensor) -> Result<Tensor, TensorError>
     {
-        let mut ret = Vec::with_capacity(rhs.shape.dim.1 as usize );
-        for j in 0..rhs.shape.dim.1 {
-            let r_start = (j*lhs.shape.dim.0) as usize;
-            let r_end = r_start + rhs.shape.dim.0 as usize;
-            let r_range:Range<usize> = r_start..r_end;
-            ret.push(Self::accum_sum(&lhs.val,
-                                     &rhs.val[r_range],
-                                     rhs.shape.dim.0 as usize));
-        }
-        Ok( Tensor::new::<i32>( rhs.shape.dim.1.into(),
-                                ret))
+        //let mut ret = Vec::with_capacity(rhs.shape.dim.1 as usize );
+        //for j in 0..rhs.shape.dim.1 {
+        //    let r_start = (j*lhs.shape.dim.0) as usize;
+        //    let r_end = r_start + rhs.shape.dim.0 as usize;
+        //    let r_range:Range<usize> = r_start..r_end;
+        //    ret.push(Self::accum_sum(&lhs.val,
+        //                             &rhs.val[r_range],
+        //                             rhs.shape.dim.0 as usize));
+        //}
+        //Ok( Tensor::new::<i32>( rhs.shape.dim.1.into(),
+        //                        ret))
+        Ok( Tensor::empty(MAT) )
     }
 
     // return single element vector when self is vector.

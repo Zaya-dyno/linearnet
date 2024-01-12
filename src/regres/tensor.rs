@@ -9,6 +9,17 @@ use super::shape::{Ituple,Shape,Degree};
 use super::shape::Degree::{SCA,VEC,MAT};
 pub type Tens = f64;
 
+#[macro_export]
+macro_rules! tensor_error {
+    ($msg:expr) => {{
+        TensorError {
+            message: $msg.to_string(),
+            line: line!() as usize,
+            column: column!() as usize,
+        }
+    }};
+}
+
 #[derive(Error,Debug)]
 #[error("{message:} ({line:}, {column})")]
 pub struct TensorError {
@@ -134,11 +145,7 @@ impl Tensor {
         if self.scalar() {
             eprintln!("Current tensor has {} shape",
                       self.shape);
-            return Err( TensorError {
-                message: "cannot softmax on scalar".to_string(),
-                line: line!() as usize,
-                column: column!() as usize,
-            });
+            return Err( tensor_error!("cannot softmax on scalar"));
         }
         let mut exps: Vec<f64>= self.val.iter().map(|a| a.exp()).collect();
         let chunks = match self.vector() {
@@ -157,11 +164,7 @@ impl Tensor {
         if self.scalar() {
             eprintln!("Current tensor has {} shape",
                       self.shape);
-            return Err( TensorError {
-                message: "cannot relu on scalar".to_string(),
-                line: line!() as usize,
-                column: column!() as usize,
-            });
+            return Err( tensor_error!("cannot relu on scalar"));
         }
         let mut ret = Vec::with_capacity(self.shape.size());
         for i in &self.val {
@@ -187,20 +190,12 @@ impl Tensor {
         if !rhs.vector() {
             eprintln!("Cannot add non vector to tensor {:?}",
                       rhs.shape.degree);
-            return Err( TensorError {
-                message: "wrong degree tensor".to_string(),
-                line: line!() as usize,
-                column: column!() as usize,
-            });
+            return Err( tensor_error!("wrong degree tensor"));
         }
         if self.shape.dim.1 != rhs.shape.dim.0 {
             eprintln!("Tried to add {} shape to {} shape",
                       rhs.shape, self.shape);
-            return Err( TensorError {
-                message: "wrong size tensors".to_string(),
-                line: line!() as usize,
-                column: column!() as usize,
-            });
+            return Err( tensor_error!("wrong size tensors"));
         }
         let mut ret = Vec::with_capacity(self.shape.size());
         for i in 0..self.shape.dim.0 {
@@ -213,11 +208,7 @@ impl Tensor {
         if !Self::can_dot_shape(self.shape,rhs.shape) {
             eprintln!("Tried to multiply {} shape with {} shape",
                       self.shape, rhs.shape);
-            return Err( TensorError {
-                message: "wrong size tensors".to_string(),
-                line: line!() as usize,
-                column: column!() as usize,
-            });
+            return Err( tensor_error!("wrong size tensors"));
         }
         match (self.shape.degree, rhs.shape.degree) {
            (SCA, _ ) => Ok(Tensor::new_empty::<i32>(0.into())),

@@ -1,7 +1,6 @@
 use rand::distributions::Uniform;
 use rand::{thread_rng,Rng};
 
-
 use thiserror::Error;
 use std::iter::{zip};
 
@@ -77,6 +76,13 @@ impl Tensor {
             shape,
             val,
         }
+    }
+
+    fn row_col(&self,mut row: i32,mut col: i32) -> Tens {
+        if self.shape.t {
+            (row,col) = (col,row)
+        }
+        self.val[ ( row * self.shape.dim.1 + col ) as usize ]
     }
 
     fn horizontal(&self, i: i32) ->  Box<dyn Iterator<Item = &Tens> + '_>
@@ -237,36 +243,28 @@ impl Tensor {
 
         
 
-    // return single element vector when self is vector.
-    //pub fn cross_entropy_loss(&self, labels: &[i32]) -> Vec<f64> {
-    //irintln!("{:#?}",loss);
-    //    if self.scalar() {
-    //        eprintln!("Current tensor has {} shape",
-    //                  self.shape);
-    //        return Err( TensorError {
-    //            message: "cannot entropy loss non-flat tensor".to_string(),
-    //            line: line!() as usize,
-    //            column: column!() as usize,
-    //        });
-    //    }
-    //    if self.shape.dim.0 != labels.len() {
-    //        eprintln!("Current tensor has {} shape",
-    //                  self.shape);
-    //        return Err( TensorError {
-    //            message: "cannot entropy loss wrong length label".to_string(),
-    //            line: line!() as usize,
-    //            column: column!() as usize,
-    //        });
-    //    }
-    //    // check non of the labels are higher than number of class 
-    //    if self.shape.dim.0 < labels.iter().max() {
-    //        eprintln!("Labels has {} value, when max is",
-    //                  labels.iter().max(),self.shape.dim.0);
-    //        return Err( TensorError {
-    //            message: "wrong label".to_string(),
-    //            line: line!() as usize;
-    //            column: column!() as usize;
-    //        })
-    //    }
-    //}
+    pub fn cross_entropy_loss(&self, labels: &Vec<i32>) -> Result<Vec<f64>,TensorError> {
+        if self.scalar() {
+            eprintln!("Current tensor has {} shape",
+                      self.shape);
+            return Err(tensor_error!("cannot entropy loss non-flat tensor"));
+        }
+        if self.shape.dim.0 as usize != labels.len() {
+            eprintln!("Current tensor has {} shape",
+                      self.shape);
+            return Err(tensor_error!("cannot entropy loss wrong length label"));
+        }
+        // check non of the labels are higher than number of class 
+        if self.shape.dim.1 < *labels.iter().max().unwrap() {
+            eprintln!("Labels has {} value, when max is {}",
+                      labels.iter().max().unwrap(),self.shape.dim.1);
+            return Err(tensor_error!("wrong label"))
+        }
+
+        let mut loss = Vec::<Tens>::with_capacity(self.shape.dim.0 as usize);
+        for i in 0..self.shape.dim.0 {
+            loss.push(self.row_col(i,labels[i as usize]));
+        }
+        Ok(loss)
+    }
 }
